@@ -2044,7 +2044,6 @@ if "_last_saved_sig" not in st.session_state:
 if "_last_autosave_sig" not in st.session_state:
     st.session_state["_last_autosave_sig"] = None
 ensure_time_picker_state()
-_maybe_restore_autosave()
 if "editor_rev" not in st.session_state:
     st.session_state["editor_rev"] = 0
 if "_last_normalized_content" not in st.session_state:
@@ -2155,6 +2154,8 @@ def _save_current_to_file():
     _write_json_file(path, payload)
     st.session_state["_last_saved_sig"] = _payload_signature(payload)
     return path
+
+_maybe_restore_autosave()
 
 def _make_record_label(rec):
     title = rec.get("title", "（無標題）") or "（無標題）"
