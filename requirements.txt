@@ -1,0 +1,5 @@
+streamlit
+streamlit-ace
+python-docx
+openpyxl
+Pillow
