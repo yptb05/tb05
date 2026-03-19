@@ -15,13 +15,10 @@
 
 import os
 import io
-import json
 import re
 import math
 import base64
 import tempfile
-from pathlib import Path
-from datetime import datetime, date, time
 
 import streamlit as st
 
@@ -59,66 +56,6 @@ P2_ROWS = 26
 MAX_CHARS = 30
 DELIMITER_DISPLAY = "/"
 DELIMITER_ALIASES = ["/", "#", "|"]
-
-WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
-TIME_OPTIONS = [time(h, m) for h in range(8, 18) for m in (0, 30) if not (h == 17 and m == 30)]
-TIME_OPTION_LABELS = [f"{t.hour:02d}:{t.minute:02d}" for t in TIME_OPTIONS]
-
-
-def snap_time_to_slot(t: time | None) -> time:
-    if t is None:
-        return TIME_OPTIONS[0]
-    total = t.hour * 60 + t.minute
-    min_total = 8 * 60
-    max_total = 17 * 60
-    total = max(min_total, min(max_total, total))
-    minute = 30 if (total % 60) >= 30 else 0
-    hour = total // 60
-    if hour == 17:
-        minute = 0
-    return time(hour, minute)
-
-
-def format_meeting_datetime(d: date | None, t: time | None) -> str:
-    if not d or t is None:
-        return ""
-    weekday = WEEKDAY_NAMES[d.weekday()]
-    period = "上午" if t.hour < 12 else "下午"
-    return f"西元{d.year:04d}年{d.month:02d}月{d.day:02d}日({weekday}){period}{t.hour:02d}時{t.minute:02d}分"
-
-
-def parse_meeting_datetime_text(text: str):
-    s = (text or "").strip()
-    m = re.match(r"^西元(\d{4})年(\d{2})月(\d{2})日\(星期[一二三四五六日]\)(上午|下午)(\d{2})時(\d{2})分$", s)
-    if not m:
-        return None, None
-    try:
-        d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-        t = snap_time_to_slot(time(int(m.group(5)), int(m.group(6))))
-        return d, t
-    except Exception:
-        return None, None
-
-
-def ensure_time_picker_state():
-    parsed_date, parsed_time = parse_meeting_datetime_text(st.session_state.get("time", ""))
-    now = datetime.now()
-    if "time_date" not in st.session_state:
-        st.session_state["time_date"] = parsed_date or now.date()
-    if "time_clock" not in st.session_state:
-        st.session_state["time_clock"] = snap_time_to_slot(parsed_time or time(now.hour, now.minute))
-    else:
-        st.session_state["time_clock"] = snap_time_to_slot(st.session_state.get("time_clock"))
-    st.session_state["time"] = format_meeting_datetime(st.session_state.get("time_date"), st.session_state.get("time_clock"))
-
-
-def sync_time_picker_from_text(text: str):
-    parsed_date, parsed_time = parse_meeting_datetime_text(text)
-    if parsed_date:
-        st.session_state["time_date"] = parsed_date
-    if parsed_time is not None:
-        st.session_state["time_clock"] = snap_time_to_slot(parsed_time)
-    st.session_state["time"] = format_meeting_datetime(st.session_state.get("time_date"), st.session_state.get("time_clock"))
 
 # ── 附件佔位符格式 ────────────────────────────────────────────────
 # 每一個附件在 editor 中佔 row_cost 行，每行都是相同的佔位符文字
@@ -891,17 +828,6 @@ def render_word_like_preview(content_text: str, owner_text: str, attachments=Non
     est_height = 220 + len(pages) * 760 + total_row_count * 4
     st.components.v1.html(preview_html, height=min(3200, max(420, est_height)), scrolling=True)
 
-@st.dialog("📄 文件預覽", width="large")
-def _preview_dialog():
-    if st.button("✕ 關閉預覽", use_container_width=True):
-        st.session_state["preview_open"] = False
-        st.rerun()
-    render_word_like_preview(
-        st.session_state.get("content", ""),
-        st.session_state.get("owner_text", ""),
-        st.session_state.get("attachments", []),
-    )
-
 def normalize_content_for_editor(text: str) -> str:
     """
     將 editor 內顯示文字還原成「原始段落」：
@@ -1141,12 +1067,12 @@ def calc_total_pages(content_text: str, attachments: list):
     return calc_page_stats(content_text, attachments)["page_num"]
 
 
-def set_cell_text(cell, text, size=14):
+def set_cell_text(cell, text):
     cell.text = str(text) if text is not None else ""
     for p in cell.paragraphs:
         p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
         for run in p.runs:
-            style_run_kaiti(run, size=size)
+            style_run_kaiti(run, size=14)
 
 
 def style_run_kaiti(run, size=10, bold=False, color=None):
@@ -1561,7 +1487,7 @@ def generate_doc_bytes(data: dict, content_text: str, owner_text: str, attachmen
             clean_text = cell.text.replace(" ", "").replace("\n", "").replace("　", "")
             for key, condition in list(search_targets.items()):
                 if condition(clean_text) and i + 1 < len(dist_cells):
-                    set_cell_text(dist_cells[i + 1], data[key], size=13)
+                    set_cell_text(dist_cells[i + 1], data[key])
                     del search_targets[key]
                     break
 
@@ -2039,11 +1965,6 @@ for key, default in [
 
 if "_all_records" not in st.session_state:
     st.session_state["_all_records"] = []
-if "_last_saved_sig" not in st.session_state:
-    st.session_state["_last_saved_sig"] = None
-if "_last_autosave_sig" not in st.session_state:
-    st.session_state["_last_autosave_sig"] = None
-ensure_time_picker_state()
 if "editor_rev" not in st.session_state:
     st.session_state["editor_rev"] = 0
 if "_last_normalized_content" not in st.session_state:
@@ -2053,15 +1974,56 @@ sync_owner_rows()
 refresh_row_map_cache()
 
 
+def _record_store_dir():
+    folder = os.path.join(os.path.expanduser("~"), "Desktop", "會議記錄助手")
+    os.makedirs(folder, exist_ok=True)
+    return folder
 
-DESKTOP_RECORD_DIR = Path.home() / "Desktop" / "會議記錄助手"
-AUTOSAVE_FILE = DESKTOP_RECORD_DIR / "_autosave.json"
 
-def _ensure_record_dir():
-    DESKTOP_RECORD_DIR.mkdir(parents=True, exist_ok=True)
-    return DESKTOP_RECORD_DIR
+def _sanitize_record_filename(text: str) -> str:
+    text = (text or "").strip()
+    text = re.sub(r'[\\/:*?"<>|\r\n]+', "_", text)
+    text = re.sub(r"\s+", " ", text).strip(" ._")
+    return text or "未命名"
 
-def _record_payload():
+
+def _make_record_label(rec):
+    title = rec.get("title", "（無標題）") or "（無標題）"
+    time_ = rec.get("time", "") or ""
+    saved_at = rec.get("saved_at", "") or ""
+    return f"{title}　{time_}　[{saved_at}]".strip() if saved_at else f"{title}　{time_}".strip()
+
+
+def _load_all_records():
+    folder = _record_store_dir()
+    records = []
+    for name in sorted(os.listdir(folder), reverse=True):
+        if not name.lower().endswith(".json"):
+            continue
+        full = os.path.join(folder, name)
+        try:
+            with open(full, "r", encoding="utf-8") as f:
+                rec = json.load(f)
+            rec["_file_name"] = name
+            rec["_file_path"] = full
+            records.append(rec)
+        except Exception:
+            continue
+    return records
+
+
+def _delete_record_file(rec):
+    full = rec.get("_file_path")
+    if full and os.path.exists(full):
+        os.remove(full)
+
+
+def _save_all_records(records):
+    # 本機私有記錄模式：不做整批覆寫，保留函式名稱相容舊呼叫。
+    return None
+
+
+def _build_current_record():
     return {
         "title": st.session_state.get("title", ""),
         "time": st.session_state.get("time", ""),
@@ -2075,130 +2037,19 @@ def _record_payload():
         "attachments": st.session_state.get("attachments", []),
     }
 
-def _payload_signature(payload=None):
-    payload = payload or _record_payload()
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
-
-def _safe_record_filename(rec):
-    title = (rec.get("title") or "未命名").strip()
-    title = re.sub(r'[\\/:*?"<>|\r\n]+', "_", title)[:40] or "未命名"
-    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{stamp}_{title}.json"
-
-def _list_record_files():
-    folder = _ensure_record_dir()
-    files = [p for p in folder.glob("*.json") if p.name != AUTOSAVE_FILE.name]
-    return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
-
-def _load_json_file(path: Path):
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def _write_json_file(path: Path, payload: dict):
-    _ensure_record_dir()
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-
-def _apply_record_to_session(rec: dict):
-    st.session_state["title"] = rec.get("title", "")
-    st.session_state["time"] = rec.get("time", "")
-    sync_time_picker_from_text(st.session_state["time"])
-    st.session_state["chair"] = rec.get("chair", "")
-    st.session_state["location"] = rec.get("location", "")
-    st.session_state["recorder"] = rec.get("recorder", "")
-    st.session_state["attendees"] = rec.get("attendees", "")
-    st.session_state["highest"] = rec.get("highest", "副總經理")
-    st.session_state["content"] = rec.get("content", "")
-    st.session_state["owner_text"] = rec.get("owner_text", "")
-    st.session_state["attachments"] = rec.get("attachments", [])
-    st.session_state["search_kw"] = ""
-    st.session_state["generated_doc_bytes"] = None
-    st.session_state["generated_doc_name"] = ""
-    st.session_state["editor_rev"] += 1
-
-def _maybe_restore_autosave():
-    if st.session_state.get("_autosave_restored"):
-        return
-    st.session_state["_autosave_restored"] = True
-    try:
-        if AUTOSAVE_FILE.exists():
-            current_blank = not any([
-                st.session_state.get("title", "").strip(),
-                st.session_state.get("chair", "").strip(),
-                st.session_state.get("location", "").strip(),
-                st.session_state.get("recorder", "").strip(),
-                st.session_state.get("attendees", "").strip(),
-                st.session_state.get("content", "").strip(),
-                st.session_state.get("owner_text", "").strip(),
-            ])
-            if current_blank:
-                rec = _load_json_file(AUTOSAVE_FILE)
-                _apply_record_to_session(rec)
-    except Exception:
-        pass
-
-def _autosave_current_record():
-    try:
-        payload = _record_payload()
-        sig = _payload_signature(payload)
-        if st.session_state.get("_last_autosave_sig") == sig:
-            return
-        _write_json_file(AUTOSAVE_FILE, payload)
-        st.session_state["_last_autosave_sig"] = sig
-    except Exception:
-        pass
-
-def _save_current_to_file():
-    payload = _record_payload()
-    path = _ensure_record_dir() / _safe_record_filename(payload)
-    _write_json_file(path, payload)
-    st.session_state["_last_saved_sig"] = _payload_signature(payload)
-    return path
-
-_maybe_restore_autosave()
-
-def _make_record_label(rec):
-    title = rec.get("title", "（無標題）") or "（無標題）"
-    time_ = rec.get("time", "") or ""
-    return f"{title}　{time_}".strip()
-
-
-def _load_all_records():
-    records = []
-    for p in _list_record_files():
-        try:
-            rec = _load_json_file(p)
-            rec["_file_path"] = str(p)
-            records.append(rec)
-        except Exception:
-            continue
-    return records
-
-
-def _save_all_records(records):
-    _ensure_record_dir()
-    current_files = {str(p) for p in _list_record_files()}
-    keep_files = set()
-    for rec in records:
-        file_path = rec.get("_file_path")
-        payload = {k: v for k, v in rec.items() if k != "_file_path"}
-        if file_path:
-            path = Path(file_path)
-        else:
-            path = _ensure_record_dir() / _safe_record_filename(payload)
-            rec["_file_path"] = str(path)
-        _write_json_file(path, payload)
-        keep_files.add(str(path))
-    for fp in current_files - keep_files:
-        try:
-            Path(fp).unlink(missing_ok=True)
-        except Exception:
-            pass
-
 
 def _save_current_to_records():
-    path = _save_current_to_file()
-    return path
+    folder = _record_store_dir()
+    rec = _build_current_record()
+    rec["saved_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    safe_title = _sanitize_record_filename(rec.get("title", ""))
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_name = f"{ts}_{safe_title}.json"
+    full = os.path.join(folder, file_name)
+    with open(full, "w", encoding="utf-8") as f:
+        json.dump(rec, f, ensure_ascii=False, indent=2)
+    return full
+
 
 
 left_col, center_col, right_col = st.columns([0.62, 1.18, 0.48], gap="medium")
@@ -2206,27 +2057,7 @@ left_col, center_col, right_col = st.columns([0.62, 1.18, 0.48], gap="medium")
 with left_col:
     st.subheader("基本資料")
     st.session_state["title"] = st.text_input("會議名稱", st.session_state["title"])
-    st.markdown("#### 開會時間")
-    time_col1, time_col2 = st.columns(2)
-    with time_col1:
-        st.session_state["time_date"] = st.date_input(
-            "開會日期",
-            value=st.session_state.get("time_date"),
-            format="YYYY/MM/DD",
-            label_visibility="collapsed",
-        )
-    with time_col2:
-        current_time = snap_time_to_slot(st.session_state.get("time_clock"))
-        current_index = TIME_OPTIONS.index(current_time) if current_time in TIME_OPTIONS else 0
-        selected_label = st.selectbox(
-            "開會時間",
-            TIME_OPTION_LABELS,
-            index=current_index,
-            label_visibility="collapsed",
-        )
-        st.session_state["time_clock"] = TIME_OPTIONS[TIME_OPTION_LABELS.index(selected_label)]
-    st.session_state["time"] = format_meeting_datetime(st.session_state.get("time_date"), st.session_state.get("time_clock"))
-    st.text_input("開會時間格式", st.session_state["time"], disabled=True)
+    st.session_state["time"] = st.text_input("開會時間", st.session_state["time"])
     st.session_state["chair"] = st.text_input("主　　席", st.session_state["chair"])
     st.session_state["location"] = st.text_input("開會地點", st.session_state["location"])
     st.session_state["recorder"] = st.text_input("會議紀錄", st.session_state["recorder"])
@@ -2236,9 +2067,13 @@ with left_col:
         ["副總經理", "總經理"],
         index=0 if st.session_state["highest"] == "副總經理" else 1
     )
+
     st.markdown("---")
     st.caption("記錄管理")
-    st.caption("首次使用時，系統會自動在目前使用者桌面建立「會議記錄助手」資料夾。")
+    if st.button("💾 儲存目前記錄", use_container_width=True):
+        _saved_path = _save_current_to_records()
+        st.success(f"已儲存到：{_saved_path}")
+
     _records = _load_all_records()
     if _records:
         _labels = [_make_record_label(r) for r in _records]
@@ -2247,20 +2082,32 @@ with left_col:
         if load_col.button("📥 載入", use_container_width=True):
             for rec in _records:
                 if _make_record_label(rec) == _sel:
-                    _apply_record_to_session(rec)
-                    st.session_state["_last_saved_sig"] = _payload_signature(_record_payload())
+                    st.session_state["title"] = rec.get("title", "")
+                    st.session_state["time"] = rec.get("time", "")
+                    sync_time_picker_from_text(st.session_state["time"])
+                    st.session_state["chair"] = rec.get("chair", "")
+                    st.session_state["location"] = rec.get("location", "")
+                    st.session_state["recorder"] = rec.get("recorder", "")
+                    st.session_state["attendees"] = rec.get("attendees", "")
+                    st.session_state["highest"] = rec.get("highest", "副總經理")
+                    st.session_state["content"] = rec.get("content", "")
+                    st.session_state["owner_text"] = rec.get("owner_text", "")
+                    st.session_state["attachments"] = rec.get("attachments", [])
+                    st.session_state["search_kw"] = ""
+                    st.session_state["generated_doc_bytes"] = None
+                    st.session_state["generated_doc_name"] = ""
+                    st.session_state["editor_rev"] += 1
                     st.rerun()
         if del_col.button("🗑️ 刪除", use_container_width=True):
             for rec in _records:
-                if _make_record_label(rec) == _sel and rec.get("_file_path"):
-                    try:
-                        Path(rec["_file_path"]).unlink(missing_ok=True)
-                    except Exception:
-                        pass
+                if _make_record_label(rec) == _sel:
+                    _delete_record_file(rec)
                     break
             st.rerun()
     else:
         st.caption("尚無儲存的記錄")
+
+    st.caption(f"首次儲存時，會自動在桌面建立：{os.path.join(os.path.expanduser('~'), 'Desktop', '會議記錄助手')}")
 
 with center_col:
     st.subheader("會議記錄內容")
@@ -2346,7 +2193,7 @@ with center_col:
     stats = calc_page_stats(st.session_state["content"], st.session_state["attachments"])
     page_label = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"][min(stats["page_num"] - 1, 9)]
 
-    tool1, tool2, tool3, tool4, tool5, tool6 = st.columns([0.92, 1.08, 1.08, 0.92, 1.02, 1.18], gap="small")
+    tool1, tool2, tool3, tool4, tool5 = st.columns([1.05, 1.25, 1.25, 1.0, 1.45], gap="small")
 
     with tool1:
         do_format = st.button("📝 排版", use_container_width=True)
@@ -2526,18 +2373,9 @@ with center_col:
         open_preview = st.button("👁️ 預覽", use_container_width=True)
 
     with tool5:
-        save_now = st.button("💾 儲存記錄", use_container_width=True)
-
-    with tool6:
         generate_now = st.button("📄 產生 Word", type="primary", use_container_width=True)
 
     st.caption(f"編輯器左側列號可直接對照搜尋結果｜目前 {stats['total_rows']} 列・第{page_label}頁 {stats['rows_in_page']} 列")
-
-    current_sig = _payload_signature(_record_payload())
-    if st.session_state.get("_last_saved_sig") == current_sig:
-        st.caption("🔵 已正式儲存")
-    else:
-        st.caption("🟡 編輯中（尚未正式儲存）")
 
     if do_format:
         formatted = format_content_for_word_button(st.session_state.get("content", ""))
@@ -2550,13 +2388,6 @@ with center_col:
 
     if open_preview:
         st.session_state["preview_open"] = True
-
-    if save_now:
-        try:
-            saved_path = _save_current_to_file()
-            st.success(f"✅ 已儲存：{saved_path.name}")
-        except Exception as e:
-            st.error(f"❌ 儲存失敗：{e}")
 
     if generate_now:
         data = {"title": st.session_state["title"], "time": st.session_state["time"], "chair": st.session_state["chair"], "location": st.session_state["location"], "recorder": st.session_state["recorder"], "attendees": st.session_state["attendees"], "highest": st.session_state["highest"]}
@@ -2584,7 +2415,11 @@ with right_col:
     if normalized_owner != st.session_state.get("owner_text", ""):
         st.session_state["owner_text"] = normalized_owner
 
-_autosave_current_record()
-
 if st.session_state.get("preview_open", False):
+    @st.dialog("📄 文件預覽", width="large")
+    def _preview_dialog():
+        if st.button("✕ 關閉預覽", use_container_width=True):
+            st.session_state["preview_open"] = False
+            st.rerun()
+        render_word_like_preview(st.session_state.get("content", ""), st.session_state.get("owner_text", ""), st.session_state.get("attachments", []))
     _preview_dialog()
