@@ -2346,7 +2346,7 @@ with center_col:
     stats = calc_page_stats(st.session_state["content"], st.session_state["attachments"])
     page_label = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"][min(stats["page_num"] - 1, 9)]
 
-    tool1, tool2, tool3, tool4, tool5 = st.columns([1.05, 1.25, 1.25, 1.0, 1.45], gap="small")
+    tool1, tool2, tool3, tool4, tool5, tool6 = st.columns([0.92, 1.08, 1.08, 0.92, 1.02, 1.18], gap="small")
 
     with tool1:
         do_format = st.button("📝 排版", use_container_width=True)
